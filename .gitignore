@@ -1,0 +1,28 @@
+# Large datasets
+data/
+datasets/
+raw_data/
+*.nc
+*.h5
+*.hdf5
+*.npy
+*.npz
+*.pkl
+
+# Python
+__pycache__/
+*.pyc
+
+# Environments
+.venv/
+venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+
+# Secrets
+.env

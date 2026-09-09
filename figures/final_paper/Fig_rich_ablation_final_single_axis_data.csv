@@ -1,0 +1,7 @@
+﻿label,mean,std,group,source_file,dual_ridge_reference
+Physics-Compact (proposed),1.056610019185317,0.002869924987761133,current-final,D:\project\WindPredict_SaildroneData\data\forecasting\15E_VH_AlphaSearch_v0_1\full_retrain\alpha_1500,1.1218050954246477
+Motion enhanced,1.0727802365413186,0.0017387864226616262,current-final,D:\project\WindPredict_SaildroneData\data\forecasting\15E_VH_AlphaSearch_v0_1\full_retrain\alpha_1500,1.1218050954246477
+Wind enhanced,1.104465853995429,0.0033156938638304813,current-final,D:\project\WindPredict_SaildroneData\data\forecasting\15E_VH_AlphaSearch_v0_1\full_retrain\alpha_1500,1.1218050954246477
+Physics-vessel-only residual,1.078909721999222,0.001313906356024,historical,D:\project\WindPredict_SaildroneData\data\forecasting\SD1090_TPOS2024_JointForecasting_v0_1\confirm_and_compact_vessel_residual_v0_1\seed_summary.csv,1.1218050954246477
+Physics-full residual,1.0790147242611734,0.0025736843966814,historical,D:\project\WindPredict_SaildroneData\data\forecasting\SD1090_TPOS2024_JointForecasting_v0_1\confirm_and_compact_vessel_residual_v0_1\seed_summary.csv,1.1218050954246477
+Full residual,1.080019649010967,0.0012120512946737,historical,D:\project\WindPredict_SaildroneData\data\forecasting\SD1090_TPOS2024_JointForecasting_v0_1\confirm_and_compact_vessel_residual_v0_1\seed_summary.csv,1.1218050954246477

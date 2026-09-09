@@ -1,0 +1,17 @@
+{
+  "horizon_min": 10,
+  "window_mode": "advantage",
+  "window_hours": 2.0,
+  "start_index": 11454,
+  "stop_index_exclusive": 11574,
+  "comparison_models": [
+    "LSTM",
+    "GRU",
+    "CNN-LSTM"
+  ],
+  "variability_percentile_if_advantage": 60.0,
+  "definition": {
+    "U_app": "true-wind U minus vessel east velocity",
+    "V_app": "true-wind V minus vessel north velocity"
+  }
+}

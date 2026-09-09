@@ -1,0 +1,31 @@
+{
+  "source": "09C_modern_baseline_outer_validation_v0_1/predictions",
+  "modern_models": [
+    "DLinear",
+    "TimeMixer",
+    "iTransformer",
+    "PatchTST"
+  ],
+  "seeds": [
+    500043,
+    501052,
+    502061,
+    503070,
+    504079
+  ],
+  "horizon_min": 10,
+  "window_hours": 8.0,
+  "window_mode": "advantage",
+  "start_index": 11523,
+  "stop_index_exclusive": 12003,
+  "observed_apparent_definition": "09C apparent_earth_raw; audited against truth_raw wind minus vessel velocity",
+  "prediction_apparent_definition": "pred_raw wind U/V minus pred_raw vessel east/north velocity",
+  "curves": [
+    "Observed",
+    "Physics-Compact",
+    "DLinear",
+    "TimeMixer",
+    "iTransformer",
+    "PatchTST"
+  ]
+}
