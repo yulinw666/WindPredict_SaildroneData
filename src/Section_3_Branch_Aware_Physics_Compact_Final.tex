@@ -1,0 +1,1085 @@
+% ======================================================================
+% Section 3 — Proposed Branch-Aware Physics-Compact Forecasting Framework
+% NOTE:
+% 1) Replace citation keys below if your .bib file uses different keys.
+% 2) Figure 1 placeholder is intentionally reserved in Sec. 3.1.
+% 3) Before final submission, verify the 10-min benchmark neural parameter
+%    count (25,876) directly from the frozen Phase-1 code/checkpoint.
+% ======================================================================
+
+\section{Proposed Branch-Aware Physics-Compact Forecasting Framework}
+\label{sec:method}
+
+\subsection{Design principle and overall architecture}
+\label{subsec:overall_architecture}
+
+The central idea of the proposed Physics-Compact framework is to preserve the predictive structure already captured by strong low-complexity models and to introduce nonlinear capacity only for the components in which systematic residual information remains. This principle is related to residual learning, in which a difficult nonlinear mapping is represented as a correction relative to a reference prediction rather than as an entirely unreferenced transformation \cite{He2016DeepResidual}. The complementary idea of combining linear or statistical predictors with nonlinear learners has a long history in time-series forecasting \cite{Zhang2003HybridARIMAANN,KhasheiBijari2011Hybrid}. In residual-based hybrid forecasting, a statistical model first explains the dominant predictable component, after which a machine-learning model is used to estimate the remaining error structure \cite{SantosJunior2019Hybrid,SantosJunior2023Residual}. Related neural forecasting architectures also retain simple predictive pathways alongside nonlinear temporal representations, including the autoregressive component of LSTNet \cite{Lai2018LSTNet} and the backward--forward residual structure of N-BEATS \cite{Oreshkin2020NBEATS}.
+
+The proposed framework follows this general philosophy but differs in two respects. First, the reference forecasts are physically interpretable task-specific anchors rather than internal neural skip connections. Second, atmospheric wind and platform motion are not forced to share an identical nonlinear correction mechanism. Development-stage analysis showed that the two branches exhibit different residual characteristics; consequently, different residual-regulation mechanisms are assigned to them.
+
+For the primary 1-min forecasting task, the model consists of two parallel predictive branches. The atmospheric branch predicts the future Earth-relative wind components,
+\begin{equation}
+\mathbf{W}_{t+h}
+=
+\begin{bmatrix}
+U_{t+h} & V_{t+h}
+\end{bmatrix}^{\mathrm T},
+\label{eq:true_wind_state}
+\end{equation}
+whereas the platform-motion branch jointly predicts
+\begin{equation}
+\mathbf{M}_{t+h}
+=
+\begin{bmatrix}
+V^{\mathrm{ship}}_{E,t+h},
+&
+V^{\mathrm{ship}}_{N,t+h},
+&
+\sin\psi_{t+h},
+&
+\cos\psi_{t+h}
+\end{bmatrix}^{\mathrm T}.
+\label{eq:motion_state}
+\end{equation}
+
+The predictions are subsequently coupled through deterministic wind--vessel kinematics to obtain future apparent wind. In generic form, the anchor--residual principle is written as
+\begin{equation}
+\hat{\mathbf y}
+=
+\hat{\mathbf y}^{\,B}
++
+\mathcal{R}
+\left(
+\mathbf X,
+\hat{\mathbf y}^{\,B}
+\right),
+\label{eq:generic_anchor_residual}
+\end{equation}
+where $\hat{\mathbf y}^{\,B}$ denotes a low-complexity anchor and $\mathcal{R}$ denotes a compact nonlinear residual correction. The form of $\mathcal{R}$ differs between the atmospheric and motion branches.
+
+% ----------------------------------------------------------------------
+% Figure 1 placeholder
+% ----------------------------------------------------------------------
+\begin{figure*}[!t]
+    \centering
+    % Replace the placeholder below with:
+    % \includegraphics[width=0.98\textwidth]{figures/Figure1_Framework.pdf}
+    \fbox{
+        \parbox[c][6.2cm][c]{0.94\textwidth}{
+            \centering
+            \textbf{Figure 1 placeholder}\\[0.8em]
+            Branch-Aware Physics-Compact framework:\\
+            Atmospheric branch
+            $\parallel$
+            Vessel-motion/HDG branch
+            $\rightarrow$
+            physics-based apparent-wind reconstruction
+        }
+    }
+    \caption{
+    Overall architecture of the proposed Branch-Aware Physics-Compact forecasting framework. The atmospheric branch combines a dedicated linear wind anchor with a two-layer GRU residual predictor and horizon/component-specific shrinkage. The platform-motion branch combines a joint Ridge anchor with a single-layer gated GRU residual predictor for vessel velocity and heading. Future apparent wind is reconstructed deterministically from the two branches.
+    }
+    \label{fig:framework}
+\end{figure*}
+
+
+
+% ======================================================================
+\subsection{Linear anchor models}
+\label{subsec:linear_anchors}
+
+\subsubsection{Dedicated atmospheric-wind anchor}
+\label{subsubsec:wind_anchor}
+
+A separate linear anchor is first constructed for future Earth-relative wind. Only the four atmospheric variables
+\begin{equation}
+[U,V,T,RH]
+\end{equation}
+are used so that the environmental prediction is not conditioned on vessel-response variables.
+
+For the 1-min primary task, the standardized 60-step atmospheric history is
+\begin{equation}
+\mathbf X_t^{W}
+\in
+\mathbb R^{60\times4}.
+\end{equation}
+It is flattened into
+\begin{equation}
+\tilde{\mathbf x}_t^{W}
+=
+\operatorname{vec}
+\left(
+\mathbf X_t^{W}
+\right)
+\in
+\mathbb R^{240},
+\label{eq:wind_flat_input}
+\end{equation}
+and the five-horizon wind target is
+\begin{equation}
+\tilde{\mathbf y}_t^{W}
+=
+\begin{bmatrix}
+U_{t+1},
+V_{t+1},
+\ldots,
+U_{t+10},
+V_{t+10}
+\end{bmatrix}^{\mathrm T}
+\in
+\mathbb R^{10}.
+\label{eq:wind_flat_target}
+\end{equation}
+
+A multi-output Ridge-family model \cite{Hoerl1970} minimizes
+\begin{equation}
+\mathcal L_R^W
+=
+\sum_{i=1}^{N_{\mathrm{tr}}}
+\left\|
+\tilde{\mathbf y}_i^W
+-
+\left(
+\mathbf W_R^W
+\tilde{\mathbf x}_i^W
++
+\mathbf b_R^W
+\right)
+\right\|_2^2
++
+\alpha_W
+\left\|
+\mathbf W_R^W
+\right\|_F^2.
+\label{eq:wind_ridge_loss}
+\end{equation}
+
+The regularization coefficient is selected using development data only. The final atmospheric anchor corresponds to $\alpha_W=0$, i.e., the unregularized member of the Ridge-family candidate set. After selection, the linear anchor is frozen. The resulting prediction is denoted by
+\begin{equation}
+\hat{\mathbf W}^{R}_{t+h}.
+\label{eq:wind_ridge_pred}
+\end{equation}
+
+\subsubsection{Joint platform-state anchor}
+\label{subsubsec:motion_anchor}
+
+A second Ridge anchor is used for the platform-motion branch. Unlike the dedicated atmospheric model, this anchor uses the complete engineered input sequence
+\begin{equation}
+\mathbf X_t
+\in
+\mathbb R^{60\times11},
+\end{equation}
+which contains wind, meteorological variables, SOG, trigonometric representations of COG and HDG, and wing angle.
+
+The flattened input is
+\begin{equation}
+\tilde{\mathbf x}_t
+=
+\operatorname{vec}
+\left(
+\mathbf X_t
+\right)
+\in
+\mathbb R^{660},
+\label{eq:joint_flat_input}
+\end{equation}
+and the complete five-horizon target contains 30 standardized values,
+\begin{equation}
+\tilde{\mathbf y}_t
+=
+\operatorname{vec}
+\left(
+\mathbf Y_t
+\right)
+\in
+\mathbb R^{30}.
+\label{eq:joint_flat_target}
+\end{equation}
+
+The joint Ridge anchor is obtained from
+\begin{equation}
+\mathcal L_R^M
+=
+\sum_{i=1}^{N_{\mathrm{tr}}}
+\left\|
+\tilde{\mathbf y}_i
+-
+\left(
+\mathbf W_R^M
+\tilde{\mathbf x}_i
++
+\mathbf b_R^M
+\right)
+\right\|_2^2
++
+\alpha_M
+\left\|
+\mathbf W_R^M
+\right\|_F^2.
+\label{eq:motion_ridge_loss}
+\end{equation}
+
+Development-stage selection gives
+\begin{equation}
+\alpha_M=100.
+\label{eq:motion_ridge_alpha}
+\end{equation}
+
+Although this model predicts all six target channels, its wind prediction is not used as the final environmental forecast. Instead, the complete Ridge output provides a compact multi-horizon context for the platform-motion residual learner.
+
+% ======================================================================
+\subsection{Atmospheric true-wind residual branch}
+\label{subsec:wind_residual}
+
+The atmospheric branch is designed to learn only the predictable nonlinear component remaining after the dedicated linear wind anchor. This follows the general residual-forecasting principle while avoiding unnecessary replacement of a strong short-horizon baseline.
+
+For each historical time step, the four atmospheric variables are augmented with compact temporal descriptors derived exclusively from the wind--meteorological history. The recurrent feature vector contains the standardized variables $U$, $V$, $T$, and $RH$, first- and second-order increments of $U$ and $V$, a wind-vector magnitude descriptor, and its temporal increment. The resulting sequence is denoted by
+\begin{equation}
+\boldsymbol{\Phi}_t^W
+\in
+\mathbb R^{60\times10}.
+\label{eq:wind_features}
+\end{equation}
+
+A fixed 10-dimensional summary vector $\mathbf s_t^W$ additionally describes the most recent wind state, local increments, window-scale variability, and trend/span information.
+
+Temporal information is encoded by a two-layer GRU with 48 hidden units per layer \cite{Cho2014GRU},
+\begin{equation}
+\mathbf h_t^W
+=
+\operatorname{GRU}_{2\times48}
+\left(
+\boldsymbol{\Phi}_t^W
+\right).
+\label{eq:wind_gru}
+\end{equation}
+
+The final recurrent state is concatenated with the compact summary vector and passed through a 48-unit nonlinear projection,
+\begin{equation}
+\mathbf z_t^W
+=
+\operatorname{GELU}
+\left[
+\mathbf W_z^W
+\left(
+\mathbf h_t^W
+\oplus
+\mathbf s_t^W
+\right)
++
+\mathbf b_z^W
+\right],
+\label{eq:wind_fusion}
+\end{equation}
+with dropout used during training.
+
+A residual head predicts the normalized nonlinear correction for all five horizons,
+\begin{equation}
+\Delta\hat{\mathbf W}^{(z)}_t
+=
+\tanh
+\left(
+\mathbf W_\Delta^W
+\mathbf z_t^W
++
+\mathbf b_\Delta^W
+\right)
+\in
+\mathbb R^{5\times2}.
+\label{eq:wind_residual_head}
+\end{equation}
+
+The output layer is initialized at zero, such that the initial nonlinear forecast is exactly equal to the frozen linear anchor.
+
+Unlike the platform-motion branch described below, the final atmospheric branch does not use a sample-dependent sigmoid gate. Instead, residual magnitude is controlled by validation-derived horizon- and component-specific shrinkage coefficients,
+\begin{equation}
+\boldsymbol{\alpha}^{W}
+=
+\left\{
+\alpha_{h,U}^{W},
+\alpha_{h,V}^{W}
+\right\}_{h\in\mathcal H},
+\qquad
+0
+\leq
+\alpha_{h,c}^{W}
+\leq
+1.
+\label{eq:wind_alpha_set}
+\end{equation}
+
+The final wind forecast is
+\begin{equation}
+\boxed{
+\hat W_{i,h,c}
+=
+\hat W^{R}_{i,h,c}
++
+\alpha_{h,c}^{W}
+\Delta\hat W_{i,h,c}
+},
+\qquad
+c\in\{U,V\}.
+\label{eq:final_wind_forecast}
+\end{equation}
+
+For a fixed residual predictor, the shrinkage coefficient is obtained on the validation interval from the least-squares residual scaling and is clipped to $[0,1]$,
+\begin{equation}
+\alpha_{h,c}^{W}
+=
+\operatorname{clip}_{[0,1]}
+\left[
+\frac{
+\sum_i
+\Delta\hat W_{i,h,c}
+\left(
+W_{i,h,c}
+-
+\hat W^R_{i,h,c}
+\right)
+}{
+\sum_i
+\left(
+\Delta\hat W_{i,h,c}
+\right)^2
++
+\epsilon
+}
+\right].
+\label{eq:wind_alpha}
+\end{equation}
+
+This global shrinkage has a specific interpretation: it represents the amount of nonlinear residual information that remains reliably exploitable at each forecast horizon. A sample-wise gate was also evaluated during model development, but did not improve validation wind or apparent-wind accuracy and is therefore omitted from the final atmospheric branch.
+
+% ======================================================================
+\subsection{Joint vessel-motion and heading gated residual branch}
+\label{subsec:motion_residual}
+
+The second nonlinear branch treats vessel velocity and heading as one coupled platform-motion state rather than as separate forecasting problems. The motion target at horizon $h$ is
+\begin{equation}
+\mathbf M_{t+h}
+=
+\begin{bmatrix}
+V^{\mathrm{ship}}_{E,t+h},
+&
+V^{\mathrm{ship}}_{N,t+h},
+&
+\sin\psi_{t+h},
+&
+\cos\psi_{t+h}
+\end{bmatrix}^{\mathrm T}.
+\label{eq:motion_target}
+\end{equation}
+
+This formulation reflects the fact that vessel translation and orientation jointly determine the future aerodynamic inflow observed in body coordinates.
+
+The nonlinear branch uses the same compact residual principle, but here a sample-dependent gate is retained because platform-motion residuals exhibit stronger state dependence.
+
+The standardized historical sequence
+$\mathbf X_t^{(z)}\in\mathbb R^{60\times11}$
+is encoded by a single-layer GRU with 64 hidden units,
+\begin{equation}
+\mathbf h_t^M
+=
+\operatorname{GRU}_{64}
+\left(
+\mathbf X_t^{(z)}
+\right).
+\label{eq:motion_gru}
+\end{equation}
+
+The complete five-horizon Ridge forecast is flattened to
+\begin{equation}
+\mathbf r_t
+=
+\operatorname{vec}
+\left(
+\hat{\mathbf Y}_t^{(z),R}
+\right)
+\in
+\mathbb R^{30},
+\label{eq:ridge_context}
+\end{equation}
+and concatenated with the recurrent representation,
+\begin{equation}
+\mathbf c_t^M
+=
+\begin{bmatrix}
+\mathbf h_t^M;
+\mathbf r_t
+\end{bmatrix}.
+\label{eq:motion_context}
+\end{equation}
+
+A 64-unit dense layer then produces
+\begin{equation}
+\mathbf z_t^M
+=
+\operatorname{ReLU}
+\left[
+\mathbf W_d^M
+\operatorname{Dropout}
+\left(
+\mathbf c_t^M
+\right)
++
+\mathbf b_d^M
+\right].
+\label{eq:motion_dense}
+\end{equation}
+
+Two parallel heads predict the 20 motion residuals and the corresponding 20 gates,
+\begin{equation}
+\Delta\hat{\mathbf M}_t^{(z)}
+=
+f_\Delta^M
+\left(
+\mathbf z_t^M
+\right)
+\in
+\mathbb R^{5\times4},
+\label{eq:motion_residual_head}
+\end{equation}
+and
+\begin{equation}
+\mathbf G_t^M
+=
+\sigma
+\left[
+f_G^M
+\left(
+\mathbf z_t^M
+\right)
+\right]
+\in
+(0,1)^{5\times4}.
+\label{eq:motion_gate}
+\end{equation}
+
+The use of a multiplicative gate is related to gating mechanisms used in neural time-series forecasting \cite{Lim2021TFT}, but its role here is deliberately narrower. It does not perform feature selection or temporal attention; instead, it controls how strongly the learned residual is allowed to modify the frozen linear anchor.
+
+The resulting prediction is
+\begin{equation}
+\boxed{
+\hat{\mathbf M}_t^{(z)}
+=
+\hat{\mathbf M}_t^{(z),R}
++
+\mathbf G_t^M
+\odot
+\Delta\hat{\mathbf M}_t^{(z)}
+}.
+\label{eq:motion_final}
+\end{equation}
+
+The residual head is initialized at zero, whereas the gate-head weights are initialized at zero with bias
+\begin{equation}
+b_G=-1,
+\end{equation}
+giving the initial gate
+\begin{equation}
+\sigma(-1)
+\approx
+0.269.
+\label{eq:initial_gate}
+\end{equation}
+
+Because the residual is initially zero, the complete hybrid prediction begins exactly from the Ridge anchor.
+
+After inverse standardization, the predicted heading pair is projected onto the unit circle,
+\begin{equation}
+\hat{\mathbf q}_{\psi,h}
+=
+\frac{
+\begin{bmatrix}
+\widehat{\sin\psi_h},
+&
+\widehat{\cos\psi_h}
+\end{bmatrix}^{\mathrm T}
+}{
+\sqrt{
+\widehat{\sin\psi_h}^{\,2}
++
+\widehat{\cos\psi_h}^{\,2}
++
+\epsilon
+}
+}.
+\label{eq:heading_normalization}
+\end{equation}
+
+The final heading is obtained as
+\begin{equation}
+\hat\psi_h
+=
+\operatorname{atan2}
+\left(
+\widehat{\sin\psi_h},
+\widehat{\cos\psi_h}
+\right).
+\label{eq:heading_angle}
+\end{equation}
+
+Thus, HDG is not predicted by a separate residual network; vessel velocity and heading share the same recurrent representation and gated residual decoder.
+
+% ======================================================================
+\subsection{Physics-guided apparent-wind reconstruction}
+\label{subsec:apparent_reconstruction}
+
+The atmospheric and platform-motion branches are coupled through a deterministic relation rather than through an additional learned network.
+
+For each forecast horizon,
+\begin{equation}
+\hat{\mathbf A}_{h}^{\mathrm{earth}}
+=
+\hat{\mathbf W}_{h}
+-
+\hat{\mathbf V}_{h}^{\mathrm{ship}}.
+\label{eq:apparent_earth}
+\end{equation}
+
+Component-wise,
+\begin{equation}
+\hat A_{E,h}
+=
+\hat U_h
+-
+\hat V^{\mathrm{ship}}_{E,h},
+\qquad
+\hat A_{N,h}
+=
+\hat V_h
+-
+\hat V^{\mathrm{ship}}_{N,h}.
+\label{eq:apparent_components}
+\end{equation}
+
+The apparent-wind speed is therefore
+\begin{equation}
+\widehat{AWS}_h
+=
+\sqrt{
+\hat A_{E,h}^{2}
++
+\hat A_{N,h}^{2}
+}.
+\label{eq:aws}
+\end{equation}
+
+Importantly, Eq.~\eqref{eq:apparent_earth} does not depend on vessel heading. Heading is required only when the Earth-frame apparent-wind vector is transformed into vessel-fixed coordinates.
+
+Using the navigation heading convention,
+\begin{equation}
+\begin{bmatrix}
+\hat A_{f,h}\\
+\hat A_{s,h}
+\end{bmatrix}
+=
+\begin{bmatrix}
+\sin\hat\psi_h & \cos\hat\psi_h\\
+\cos\hat\psi_h & -\sin\hat\psi_h
+\end{bmatrix}
+\begin{bmatrix}
+\hat A_{E,h}\\
+\hat A_{N,h}
+\end{bmatrix},
+\label{eq:body_rotation}
+\end{equation}
+where $A_f$ and $A_s$ denote forward and starboard components.
+
+The signed body-frame wind-from angle is
+\begin{equation}
+\widehat{AWA}_h
+=
+\operatorname{atan2}
+\left(
+-\hat A_{s,h},
+-\hat A_{f,h}
+\right),
+\label{eq:awa}
+\end{equation}
+wrapped to
+\begin{equation}
+[-180^\circ,180^\circ).
+\end{equation}
+
+Consequently, AWS and AWA are not independently predicted scalar targets. They are derived from the same physically consistent apparent-wind vector.
+
+% ======================================================================
+\subsection{Training objectives and model selection}
+\label{subsec:training_objectives}
+
+The atmospheric and motion residual learners are optimized independently to prevent unnecessary coupling between branches.
+
+For the atmospheric branch, the nonlinear network learns the residual relative to the frozen linear wind anchor,
+\begin{equation}
+\mathbf R^W_{i,h}
+=
+\mathbf W_{i,h}
+-
+\hat{\mathbf W}_{i,h}^{R}.
+\label{eq:wind_residual_target}
+\end{equation}
+
+Leakage-safe out-of-fold anchor predictions are used to construct the training residual targets. This prevents the neural learner from being trained against artificially small in-sample errors of the linear anchor.
+
+The atmospheric residual loss is
+\begin{equation}
+\mathcal L_W
+=
+\frac{1}{
+N
+\left|
+\mathcal H
+\right|
+}
+\sum_{i=1}^{N}
+\sum_{h\in\mathcal H}
+\left\|
+\Delta\hat{\mathbf W}^{(z)}_{i,h}
+-
+\mathbf R^{W,(z)}_{i,h}
+\right\|_2^2.
+\label{eq:wind_loss}
+\end{equation}
+
+The model uses AdamW with an initial learning rate of $8\times10^{-4}$, batch size 512, dropout 0.1, and early stopping on development validation performance.
+
+For the motion branch, direct standardized losses are defined for vessel velocity and heading,
+\begin{equation}
+\mathcal L_V
+=
+\frac{1}{
+N
+\left|
+\mathcal H
+\right|
+}
+\sum_{i,h}
+\left\|
+\hat{\mathbf V}^{(z)}_{i,h}
+-
+\mathbf V^{(z)}_{i,h}
+\right\|_2^2,
+\label{eq:vessel_loss}
+\end{equation}
+and
+\begin{equation}
+\mathcal L_\psi
+=
+\frac{1}{
+N
+\left|
+\mathcal H
+\right|
+}
+\sum_{i,h}
+\left\|
+\hat{\mathbf q}^{(z)}_{\psi,i,h}
+-
+\mathbf q^{(z)}_{\psi,i,h}
+\right\|_2^2.
+\label{eq:heading_loss}
+\end{equation}
+
+As in the previous Physics-Compact formulation, an Earth-frame apparent-wind consistency term is retained,
+\begin{equation}
+\mathcal L_{AE}
+=
+\frac{1}{
+N
+\left|
+\mathcal H
+\right|
+}
+\sum_{i,h}
+\left[
+\left(
+\frac{
+\hat A_{E,i,h}
+-
+A_{E,i,h}
+}{
+\sigma^{\mathrm{tr}}_{A_E}
+}
+\right)^2
++
+\left(
+\frac{
+\hat A_{N,i,h}
+-
+A_{N,i,h}
+}{
+\sigma^{\mathrm{tr}}_{A_N}
+}
+\right)^2
+\right].
+\label{eq:apparent_loss}
+\end{equation}
+
+A small residual regularizer penalizes unnecessarily large anchor corrections,
+\begin{equation}
+\mathcal L_{\mathrm{res}}
+=
+\frac{1}{
+N
+\left|
+\mathcal H
+\right|
+}
+\sum_{i,h}
+\left\|
+\mathbf G^M_{i,h}
+\odot
+\Delta\hat{\mathbf M}^{(z)}_{i,h}
+\right\|_2^2.
+\label{eq:residual_regularization}
+\end{equation}
+
+The final motion-branch objective is
+\begin{equation}
+\boxed{
+\mathcal L_M
+=
+\mathcal L_V
++
+\mathcal L_\psi
++
+2\mathcal L_{AE}
++
+0.01\mathcal L_{\mathrm{res}}
+}.
+\label{eq:motion_total_loss}
+\end{equation}
+
+The motion branch is optimized using Adam with learning rate $10^{-3}$, batch size 256, dropout 0.1, and a maximum of 80 epochs.
+
+Model selection does not directly optimize AWA. The validation score balances vessel-vector and heading prediction relative to their Ridge anchors,
+\begin{equation}
+S_M
+=
+\frac{1}{2}
+\frac{
+\mathrm{RMSE}_{V,\mathrm{model}}
+}{
+\mathrm{RMSE}_{V,\mathrm{Ridge}}
+}
++
+\frac{1}{2}
+\frac{
+\mathrm{MAE}_{\psi,\mathrm{model}}
+}{
+\mathrm{MAE}_{\psi,\mathrm{Ridge}}
+}.
+\label{eq:motion_validation_score}
+\end{equation}
+
+This prevents the heading branch from being tuned directly to the final AWA metric.
+
+Five predefined initialization seeds are used,
+\begin{equation}
+\mathcal S
+=
+\left\{
+500043,
+501052,
+502061,
+503070,
+504079
+\right\}.
+\label{eq:seed_set}
+\end{equation}
+
+No external voyage is used for checkpoint selection, hyperparameter optimization, or recalibration.
+
+% ======================================================================
+\subsection{Parameter complexity of the primary model}
+\label{subsec:primary_complexity}
+
+The final primary model remains compact relative to conventional deep forecasting architectures despite containing separate atmospheric and motion residual mechanisms.
+
+The two-layer atmospheric residual network contains
+\begin{equation}
+\boxed{
+26{,}074
+}
+\end{equation}
+trainable neural parameters.
+
+The joint Vessel--HDG residual branch contains
+\begin{equation}
+\boxed{
+23{,}464
+}
+\end{equation}
+trainable neural parameters.
+
+Therefore, the complete nonlinear component contains
+\begin{equation}
+26{,}074
++
+23{,}464
+=
+\boxed{
+49{,}538
+}
+\label{eq:total_neural_params}
+\end{equation}
+trainable neural parameters.
+
+The dedicated atmospheric linear anchor contains 2,410 affine coefficients, while the complete joint Ridge anchor contains 19,830 coefficients. If all fitted affine coefficients and neural weights are counted together, the model contains
+\begin{equation}
+49{,}538
++
+2{,}410
++
+19{,}830
+=
+\boxed{
+71{,}778
+}
+\label{eq:total_fitted_coefficients}
+\end{equation}
+fitted coefficients.
+
+Throughout the neural-model complexity comparisons, however, ``trainable parameters'' refers specifically to trainable neural-network parameters, while frozen linear-anchor coefficients are reported separately. This distinction avoids conflating the compact neural correction with deterministic affine mappings.
+
+The physical reconstruction layer introduces no trainable parameters, iterative solver, or numerical integration. Apparent-wind inference requires only vector subtraction, a two-dimensional coordinate rotation, and scalar post-processing.
+
+% ======================================================================
+\subsection{Frozen external-generalization protocol}
+\label{subsec:external_protocol}
+
+External generalization is evaluated using three SD1033 datasets from 2024, 2023, and 2022. The input schema, 60-min historical context, forecast horizons, Ridge coefficients, neural architecture, residual parameters, validation-selected shrinkage coefficients, and model checkpoints are frozen before external inference.
+
+External data are standardized using statistics fitted to the SD1090 development training set,
+\begin{equation}
+x_j^{(z),\mathrm{ext}}
+=
+\frac{
+x_j^{\mathrm{ext}}
+-
+\mu_{j,\mathrm{tr}}^{\mathrm{SD1090}}
+}{
+\sigma_{j,\mathrm{tr}}^{\mathrm{SD1090}}
+},
+\label{eq:external_standardization}
+\end{equation}
+with no external mean, variance, or calibration statistic fitted.
+
+No optimizer step, fine-tuning, external early stopping, seed selection, or post-hoc recalibration is applied.
+
+For the 2024 cross-vehicle evaluation, an additional matched-period dataset is constructed using timestamps that are simultaneously available for the SD1090 and SD1033 platforms. The 2023 and 2022 datasets are evaluated over their complete valid forecasting periods.
+
+% ======================================================================
+\subsection{Literature-aligned 10-min comparison with BP-STGNN}
+\label{subsec:bp_benchmark}
+
+To keep the literature benchmark conceptually separate from the primary 1-min joint forecasting problem, the comparison with BP-STGNN is introduced only in this subsection. The primary model described in Sections~\ref{subsec:overall_architecture}--\ref{subsec:external_protocol} is developed for joint true-wind, vessel-motion, heading, and apparent-wind prediction, whereas the present benchmark isolates only the true-wind prediction functionality shared with BP-STGNN. The two protocols are summarized in Table~\ref{tab:protocols}.
+
+\begin{table*}[!t]
+\centering
+\caption{Protocol-specific implementations used in this study.}
+\label{tab:protocols}
+\begin{tabular}{p{3.3cm}p{5.4cm}p{5.4cm}}
+\hline
+\textbf{Item} &
+\textbf{Primary joint prediction} &
+\textbf{BP-STGNN literature benchmark} \\
+\hline
+Sampling interval
+& 1 min
+& 10 min
+\\
+Historical observations
+& 60
+& 6
+\\
+Physical history length
+& 60 min
+& 60 min
+\\
+Raw atmospheric channels
+& $U,V,T,RH$
+& $U,V,T,RH$
+\\
+Motion inputs
+& Complete 11-feature sequence
+& Not used in the final wind target
+\\
+Forecast horizons
+& 1, 2, 3, 5, and 10 min
+& Next 10-min state
+\\
+Main targets
+& Wind + vessel velocity + HDG
+& $U,V$
+\\
+Atmospheric residual
+& 2-layer GRU48, no sample-wise gate
+& Benchmark-specific compact residual model
+\\
+Motion residual
+& 1-layer GRU64 with sample-wise gate
+& ---
+\\
+Role
+& Proposed model
+& Literature-aligned comparison
+\\
+\hline
+\end{tabular}
+\end{table*}
+
+
+To position Physics-Compact against a recent wind-prediction framework developed specifically for unmanned sailboats, a separate 10-min benchmark is conducted with the Bayesian physics-guided spatiotemporal graph neural network (BP-STGNN) of Nie et al. \cite{Nie2026}.
+
+This experiment is intentionally separated from the primary 1-min joint wind--vessel task because BP-STGNN addresses future environmental-wind prediction rather than joint future apparent-wind reconstruction.
+
+The original 1-min mean Saildrone records are \textbf{point-sampled every 10 min}. Non-overlapping ten-point arithmetic averaging is not used.
+
+The six historical samples therefore represent a 60-min context,
+\begin{equation}
+\mathbf X_t^{10}
+=
+\begin{bmatrix}
+\mathbf x_{t-50},
+\mathbf x_{t-40},
+\mathbf x_{t-30},
+\mathbf x_{t-20},
+\mathbf x_{t-10},
+\mathbf x_t
+\end{bmatrix}
+\in
+\mathbb R^{6\times4},
+\label{eq:bp_input}
+\end{equation}
+where
+\begin{equation}
+\mathbf x_t
+=
+\begin{bmatrix}
+U_t,
+V_t,
+T_t,
+RH_t
+\end{bmatrix}^{\mathrm T}.
+\end{equation}
+
+The prediction target is the next 10-min wind state,
+\begin{equation}
+\boxed{
+\mathbf X_t^{10}
+\longrightarrow
+\begin{bmatrix}
+U_{t+10},
+V_{t+10}
+\end{bmatrix}^{\mathrm T}
+}.
+\label{eq:bp_target}
+\end{equation}
+
+Wind speed and direction are derived from the same predicted vector,
+\begin{equation}
+\widehat{WS}
+=
+\sqrt{
+\hat U^2
++
+\hat V^2
+},
+\label{eq:bp_ws}
+\end{equation}
+and
+\begin{equation}
+\widehat{WD}
+=
+\operatorname{atan2}
+\left(
+-\hat U,
+-\hat V
+\right)
+\bmod 360^\circ.
+\label{eq:bp_wd}
+\end{equation}
+
+The benchmark-specific Physics-Compact implementation retains a compact anchor--residual structure and contains 25,876 trainable neural parameters. BP-STGNN reports 242,580 trainable parameters \cite{Nie2026}. The corresponding reduction is
+\begin{equation}
+1
+-
+\frac{
+25{,}876
+}{
+242{,}580
+}
+=
+\boxed{
+89.33\%
+},
+\label{eq:bp_param_reduction}
+\end{equation}
+or, equivalently,
+\begin{equation}
+\frac{
+242{,}580
+}{
+25{,}876
+}
+=
+\boxed{
+9.37
+}.
+\label{eq:bp_param_ratio}
+\end{equation}
+
+Thus, BP-STGNN contains approximately 9.4 times as many trainable neural parameters.
+
+The comparison is restricted to the wind-prediction functionality common to both methods. The vessel-motion and heading branches of the primary Physics-Compact model are therefore excluded from this parameter comparison.
+
+It should also be emphasized that BP-STGNN provides Bayesian uncertainty quantification in addition to point prediction, whereas the present Physics-Compact implementation is deterministic. The parameter comparison consequently evaluates the point-prediction accuracy--complexity trade-off rather than claiming functional equivalence between the two frameworks.
+
+Because the 10-min benchmark is used as a literature-aligned same-mission comparison rather than as the primary joint forecasting protocol, its results are reported separately from the 1-min SD1090/SD1033 experiments.
+
+% ======================================================================
+\subsection{Methodological summary}
+\label{subsec:method_summary}
+
+The final primary forecasting path can be summarized as
+\begin{equation}
+\mathbf X_t^{W}
+\rightarrow
+\hat{\mathbf W}^{R}
+\rightarrow
+\Delta\hat{\mathbf W}
+\rightarrow
+\hat{\mathbf W},
+\label{eq:summary_wind}
+\end{equation}
+and
+\begin{equation}
+\mathbf X_t
+\rightarrow
+\hat{\mathbf Y}^{R}
+\rightarrow
+\left\{
+\Delta\hat{\mathbf M},
+\mathbf G^M
+\right\}
+\rightarrow
+\hat{\mathbf M},
+\label{eq:summary_motion}
+\end{equation}
+followed by
+\begin{equation}
+\boxed{
+\hat{\mathbf A}^{\mathrm{earth}}
+=
+\hat{\mathbf W}
+-
+\hat{\mathbf V}^{\mathrm{ship}}
+}
+\label{eq:summary_apparent}
+\end{equation}
+and the heading-based transformation to body-frame apparent wind.
+
+The resulting design is therefore characterized by three principles: a strong linear anchor is retained rather than replaced; nonlinear correction is regulated differently for atmospheric and platform-motion states according to their observed residual characteristics; and known wind--vessel kinematics are imposed deterministically instead of being relearned by an additional neural network.
